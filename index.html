@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Data Viewer</title>
+    <style>
+/* General Styling */
+body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f9f9f9;
+    color: #333;
+    margin: 0;
+    padding: 20px;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* Search Container */
+.search-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.search-container input {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    flex: 1;
+}
+
+.search-container button {
+    padding: 12px;
+    background-color: #333;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    flex: 0 0 auto;
+    margin-left: 10px;
+}
+
+.search-container button img {
+    width: 20px;
+    height: 20px;
+}
+
+.search-container button:hover {
+    background-color: #555;
+}
+
+/* Results & Panel Configurations */
+.results, .panel-config-container, #panelConfigData {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+.results h2, #panelConfigData h3 {
+    font-size: 22px;
+    color: #333;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.results p, #panelConfigData p {
+    font-size: 16px;
+    margin: 8px 0;
+}
+
+.results p strong, #panelConfigData p strong {
+    font-weight: bold;
+    color: #000;
+}
+
+/* Panel Config Container */
+.panel-config-container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.panel-config-container label {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.panel-config-container input {
+    padding: 10px;
+    font-size: 16px;
+    width: 100px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-right: 10px;
+}
+
+.panel-config-container button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    margin-top: 10px;
+}
+
+.panel-config-container button:hover {
+    background-color: #0056b3;
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    .search-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search-container button {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .panel-config-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .panel-config-container input {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
+    </style>
+   
+</head>
+<body>
+    <div class="search-container">
+        <input id="locationInput" type="text" placeholder="Unesite lokaciju">
+        <button id="searchIcon"><img src="https://img.icons8.com/ios-filled/50/ffffff/search--v1.png" alt="Pretraga"></button>
+    </div>
+    
+    <div class="results" id="buildingData"></div>
+    <div class="panel-config-container" style="display:none;">
+        <label for="panelCountInput">Odaberite broj panela (1 - <span id="maxPanels"></span>):</label>
+        <input id="panelCountInput" type="number" min="1" value="1" />
+        <button id="panelConfigButton">Prikaži konfiguraciju</button>
+    </div>
+    <div id="panelConfigData"></div>
+    
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC1ZSuTYsM_515ggYnpxFaFZvZIpxFbCX4&libraries=places" async defer></script>
+
+    <script>
+        const solarApiKey = 'AIzaSyC1ZSuTYsM_515ggYnpxFaFZvZIpxFbCX4'; // Zamenite sa vašim stvarnim API ključem
+        let autocomplete;
+        let locationInput = document.getElementById('locationInput');
+        let buildingDataElement = document.getElementById('buildingData');
+        let panelConfigDataElement = document.getElementById('panelConfigData');
+        let panelCountInput = document.getElementById('panelCountInput');
+        let maxPanelsElement = document.getElementById('maxPanels');
+        let selectedPlace;
+        let solarPanelConfigs = [];
+
+        function initAutocomplete() {
+            autocomplete = new google.maps.places.Autocomplete(locationInput, {
+                types: ['geocode'],
+            });
+
+            autocomplete.addListener('place_changed', function() {
+                selectedPlace = autocomplete.getPlace();
+                if (!selectedPlace.geometry) {
+                    console.log("Vraćeno mesto nema geometriju");
+                    return;
+                }
+
+                const lat = selectedPlace.geometry.location.lat();
+                const lng = selectedPlace.geometry.location.lng();
+                console.log(`Odabrano mesto: ${selectedPlace.formatted_address}`);
+                fetchBuildingData(lat, lng);
+            });
+        }
+
+        function fetchBuildingData(lat, lng) {
+            const apiUrl = `https://solar.googleapis.com/v1/buildingInsights:findClosest?location.latitude=${lat}&location.longitude=${lng}&requiredQuality=HIGH&key=${solarApiKey}`;
+
+            fetch(apiUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP greška! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Building Insights API odgovor:", data);
+                    displayBuildingData(data);
+                    solarPanelConfigs = data.solarPotential.solarPanelConfigs; // Sačuvaj konfiguracije panela
+                    const maxPanels = solarPanelConfigs.length;
+                    maxPanelsElement.textContent = maxPanels;
+                    panelCountInput.max = maxPanels;
+                    panelCountInput.value = maxPanels;
+                    document.querySelector('.panel-config-container').style.display = 'block';
+                    displayPanelConfig(maxPanels); // Prikaz podataka za maksimalan broj panela po defaultu
+                })
+                .catch(error => {
+                    console.error("Greška pri preuzimanju podataka:", error);
+                    buildingDataElement.innerHTML = `<p>Greška pri preuzimanju podataka o zgradi: ${error.message}</p>`;
+                });
+        }
+
+        function displayBuildingData(data) {
+            buildingDataElement.innerHTML = `
+                <h2>Informacije o zgradi za lokaciju:</h2>
+                <p><strong>Površina (m²):</strong> ${data.solarPotential.buildingStats.areaMeters2}</p>
+                <p><strong>Površina zemlje (m²):</strong> ${data.solarPotential.buildingStats.groundAreaMeters2}</p>
+                <p><strong>Maksimalan broj panela:</strong> ${data.solarPotential.maxArrayPanelsCount}</p>
+                <p><strong>Maksimalna površina panela (m²):</strong> ${data.solarPotential.maxArrayAreaMeters2}</p>
+                <p><strong>Maksimalni sati sunčeve energije godišnje:</strong> ${data.solarPotential.maxSunshineHoursPerYear}</p>
+                <p><strong>Faktor smanjenja CO2 (kg/MWh):</strong> ${data.solarPotential.carbonOffsetFactorKgPerMwh}</p>
+                <p><strong>Kapacitet panela (Wati):</strong> ${data.solarPotential.panelCapacityWatts}</p>
+                <p><strong>Visina panela (Metri):</strong> ${data.solarPotential.panelHeightMeters}</p>
+                <p><strong>Širina panela (Metri):</strong> ${data.solarPotential.panelWidthMeters}</p>
+                <p><strong>Životni vek panela (Godine):</strong> ${data.solarPotential.panelLifetimeYears}</p>
+            `;
+        }
+
+        function displayPanelConfig(panelCount) {
+            const config = solarPanelConfigs.find(c => c.panelsCount === panelCount);
+            if (config) {
+                panelConfigDataElement.innerHTML = `
+                    <h3>Konfiguracija solarnih panela za ${panelCount} panela:</h3>
+                    <p><strong>Broj panela:</strong> ${config.panelsCount}</p>
+                    <p><strong>Godišnja energija DC (kWh):</strong> ${config.yearlyEnergyDcKwh}</p>
+                `;
+            } else {
+                panelConfigDataElement.innerHTML = `<p>Nema konfiguracije za ${panelCount} panela.</p>`;
+            }
+        }
+
+        document.getElementById('panelConfigButton').addEventListener('click', function () {
+            const panelCount = parseInt(panelCountInput.value);
+            displayPanelConfig(panelCount);
+        });
+
+        document.getElementById('searchIcon').addEventListener('click', function () {
+            const address = locationInput.value;
+            if (address) {
+                const geocoder = new google.maps.Geocoder();
+                geocoder.geocode({ 'address': address }, function(results, status) {
+                    if (status === 'OK') {
+                        const lat = results[0].geometry.location.lat();
+                        const lng = results[0].geometry.location.lng();
+                        fetchBuildingData(lat, lng);
+                    } else {
+                        console.error('Geokodiranje nije uspelo iz sledećeg razloga: ' + status);
+                    }
+                });
+            } else {
+                console.log("Niste uneli adresu.");
+            }
+        });
+
+        window.onload = initAutocomplete;
+    </script>
+</body>
+
+
+</html>
